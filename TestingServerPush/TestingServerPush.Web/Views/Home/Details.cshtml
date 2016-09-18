@@ -1,0 +1,167 @@
+﻿@model JobDetailsViewModel
+@{
+    this.ViewBag.Title = "Job #" + this.Model.Id;
+    var rowNo = 1;
+}
+
+<h2>@this.ViewBag.Title</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="row">
+            <h4>Details</h4>
+            <dl class="dl-horizontal">
+
+                <dt>@Html.DisplayNameFor(model => model.Name)</dt>
+                <dd>@Html.DisplayFor(model => model.Name)</dd>
+
+                <dt>@Html.DisplayNameFor(model => model.AddedAtAsText)</dt>
+                <dd>@Html.DisplayFor(model => model.AddedAtAsText)</dd>
+
+                <dt>@Html.DisplayNameFor(model => model.StatusName)</dt>
+                <dd id="status">@Html.DisplayFor(model => model.StatusName)</dd>
+
+                <dt>@Html.DisplayNameFor(model => model.Resolution)</dt>
+                <dd id="resolution"
+                    data-job="@Model.Id"
+                    data-subscribe="@(Model.IsInProgress)">@Html.DisplayFor(model => model.Resolution)</dd>
+
+            </dl>
+        </div>
+
+        @if (this.Model.Actions.Any())
+        {
+            <h4>Actions</h4>
+            <div class="row">
+                <table id="actions" class="table table-condensed table-hover table-responsive table-striped">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Added At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var action in this.Model.Actions)
+                        {
+                            <tr>
+                                <td>@(rowNo++).</td>
+                                <td>@Html.DisplayFor(modelItem => action.AddedAtAsText)</td>
+                                <td>@Html.DisplayFor(modelItem => action.Name)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+    <div class="col-md-6">
+        <div id="map" style="height: 400px;"></div>
+    </div>
+</div>
+<p>
+    <a class="btn btn-default" href="@Url.Action("Index", "Home")">&larr; Back to List</a>
+</p>
+
+@section page_js {
+
+    <script src="~/signalr/hubs"></script>
+    <script>
+        $(function() {
+            $('#resolution[data-subscribe="True"]').each(function() {
+
+                var jobId = $(this).data('job');
+                var jobHub = $.connection.jobHub;
+
+                jobHub.client.update = function(id, status, resolution, actions, positions) {
+                    $('#status').html(status);
+                    $('#resolution').html(resolution);
+
+                    var tableRef = document.getElementById('actions').getElementsByTagName('tbody')[0];
+                    var rows = tableRef.rows;
+                    var i = rows.length;
+                    while (--i) {
+                        rows[i].parentNode.removeChild(rows[i]);
+                    }
+                    rows[0].parentNode.removeChild(rows[0]);
+
+                    var actionsArray = JSON.parse(actions);
+                    for (var j = 0; j < actionsArray.length; j++) {
+                        var action = actionsArray[j];
+
+                        var newRow = tableRef.insertRow(tableRef.rows.length);
+
+                        var newCell1 = newRow.insertCell(0);
+                        newCell1.appendChild(document.createTextNode("" + (j + 1) + "."));
+
+                        var newCell2 = newRow.insertCell(1);
+                        newCell2.appendChild(document.createTextNode("" + action.addedAtAsText));
+
+                        var newCell3 = newRow.insertCell(2);
+                        newCell3.appendChild(document.createTextNode("" + action.name));
+                    }
+
+                    if (flightPlan) {
+                        flightPlan.setMap(null);
+                    }
+
+                    if (markers.length !== 0) {
+                        for (var t = 0; t < markers.length; t++) {
+                            markers[t].setMap(null);
+                        }
+                    }
+                    markers.length = 0;
+
+                    var positionsAsArray = JSON.parse(positions);
+
+                    for (var z = 0; z < positionsAsArray.length; z++) {
+                        markers.push(new google.maps.Marker({
+                            position: positionsAsArray[z],
+                            map: googleMap,
+                            icon: {
+                                url: 'http://maps.google.com/mapfiles/kml/shapes/cycling.png',
+                                scaledSize: new google.maps.Size(16, 16),
+                                origin: new google.maps.Point(0, 0),
+                                anchor: new google.maps.Point(8, 8)
+                            }
+                        }));
+                    }
+
+                    flightPlan = new google.maps.Polyline({
+                        path: positionsAsArray,
+                        geodesic: true,
+                        strokeColor: '#FF0000',
+                        strokeOpacity: 1.0,
+                        strokeWeight: 3
+                    });
+                    flightPlan.setMap(googleMap);
+                };
+
+                $.connection.hub.start().done(function() {
+
+                    jobHub.server.subscribe(jobId);
+                });
+            });
+        });
+    </script>
+    <script type="text/javascript">
+        var defaultLocation = @(this.ViewBag.DefaultLocation);
+        var detailsArgs = {
+            map: "map",
+            positionsAsJson: @(this.Model.PositionsAsPointsArray.AsJson()),
+            startPosition: {
+                lat: @(this.Model.PickupLocationLatitude),
+                lng: @(this.Model.PickupLocationLongitude)
+            },
+            endPosition: {
+                lat: @(this.Model.DeliveryLocationLatitude),
+                lng: @(this.Model.DeliveryLocationLongitude)
+            },
+        };
+        var googleMap;
+        var flightPlan;
+        var markers = [];
+    </script>
+    @Scripts.Render("~/bundles/job-js")
+    <script type="text/javascript" async defer src="https://maps.googleapis.com/maps/api/js?key=@(this.ViewBag.GoogleMapsApiKey)&callback=initMap"></script>
+}
